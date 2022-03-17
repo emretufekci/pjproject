@@ -580,7 +580,7 @@ on_make_call_med_tp_complete(pjsua_call_id call_id,
 	/* Upon failure to send first request, the invite
 	 * session would have been cleared.
 	 */
-	inv = NULL;
+	call->inv = inv = NULL;
 	goto on_error;
     }
 
@@ -609,10 +609,12 @@ on_error:
     if (dlg) {
 	/* This may destroy the dialog */
 	pjsip_dlg_dec_lock(dlg);
+	call->async_call.dlg = NULL;
     }
 
     if (inv != NULL) {
 	pjsip_inv_terminate(inv, PJSIP_SC_OK, PJ_FALSE);
+	call->inv = NULL;
     }
 
     if (call_id != -1) {
@@ -693,6 +695,7 @@ static pj_status_t apply_call_setting(pjsua_call *call,
 #endif
 
     if (call->opt.flag & PJSUA_CALL_REINIT_MEDIA) {
+    	PJ_LOG(4, (THIS_FILE, "PJSUA_CALL_REINIT_MEDIA"));
     	pjsua_media_channel_deinit(call->index);
     }
 
@@ -834,7 +837,7 @@ PJ_DEF(pj_status_t) pjsua_call_make_call(pjsua_acc_id acc_id,
     pj_pool_t *tmp_pool = NULL;
     pjsip_dialog *dlg = NULL;
     pjsua_acc *acc;
-    pjsua_call *call;
+    pjsua_call *call = NULL;
     int call_id = -1;
     pj_str_t contact;
     pj_status_t status;
@@ -1018,9 +1021,10 @@ PJ_DEF(pj_status_t) pjsua_call_make_call(pjsua_acc_id acc_id,
 
 
 on_error:
-    if (dlg) {
+    if (dlg && call) {
 	/* This may destroy the dialog */
 	pjsip_dlg_dec_lock(dlg);
+	call->async_call.dlg = NULL;
     }
 
     if (call_id != -1) {
@@ -1508,9 +1512,9 @@ pj_bool_t pjsua_call_on_incoming(pjsip_rx_data *rdata)
 	    pjsip_response_addr res_addr;
 
 	    pjsip_get_response_addr(response->pool, rdata, &res_addr);
-	    pjsip_endpt_send_response(pjsua_var.endpt, &res_addr, response,
+	    status = pjsip_endpt_send_response(pjsua_var.endpt, &res_addr, response,
 				      NULL, NULL);
-
+	    if (status != PJ_SUCCESS) pjsip_tx_data_dec_ref(response);
 	} else {
 
 	    /* Respond with 500 (Internal Server Error) */
@@ -1706,8 +1710,9 @@ pj_bool_t pjsua_call_on_incoming(pjsip_rx_data *rdata)
 	    pjsip_response_addr res_addr;
 
 	    pjsip_get_response_addr(response->pool, rdata, &res_addr);
-	    pjsip_endpt_send_response(pjsua_var.endpt, &res_addr, response,
-				      NULL, NULL);
+	    status = pjsip_endpt_send_response(pjsua_var.endpt, &res_addr, response,
+				                           NULL, NULL);
+	    if (status != PJ_SUCCESS) pjsip_tx_data_dec_ref(response);
 
 	} else {
 	    /* Respond with 500 (Internal Server Error) */
@@ -2618,6 +2623,15 @@ PJ_DEF(pj_status_t) pjsua_call_answer2(pjsua_call_id call_id,
     if (status != PJ_SUCCESS)
 	goto on_return;
 
+    if (!call->inv->invite_tsx ||
+    	call->inv->invite_tsx->state >= PJSIP_TSX_STATE_COMPLETED)
+    {
+	PJ_LOG(3,(THIS_FILE, "Unable to answer call (no incoming INVITE or "
+			     "already answered)"));
+	status = PJ_EINVALIDOP;
+	goto on_return;
+    }
+
     /* Apply call setting, only if status code is 1xx or 2xx. */
     if (opt && code < 300) {
 	/* Check if it has not been set previously or it is different to
@@ -2831,12 +2845,19 @@ static pj_status_t call_inv_end_session(pjsua_call *call,
     }
     
 on_return:
-    if (status != PJ_SUCCESS) {
+    /* Failure in pjsip_inv_send_msg() can cause
+     * pjsua_call_on_state_changed() to be called and call to be reset,
+     * so we need to check for call->inv as well.
+     */
+    if (status != PJ_SUCCESS && call->inv) {
     	pj_time_val delay;
 
     	/* Schedule a retry */
     	if (call->hangup_retry >= CALL_HANGUP_MAX_RETRY) {
     	    /* Forcefully terminate the invite session. */
+	    PJ_LOG(1,(THIS_FILE,"Call %d: failed to hangup after %d retries, "
+				"terminating the session forcefully now!",
+				call->index, call->hangup_retry));
     	    pjsip_inv_terminate(call->inv, call->hangup_code, PJ_TRUE);
     	    return PJ_SUCCESS;
     	}
@@ -2976,7 +2997,6 @@ PJ_DEF(pj_status_t) pjsua_call_hangup(pjsua_call_id call_id,
     	} else {
     	    /* Destroy media session. */
     	    pjsua_media_channel_deinit(call_id);
-
 	    call->hanging_up = PJ_TRUE;
 	    pjsua_check_snd_dev_idle();
 	}
@@ -2991,10 +3011,13 @@ PJ_DEF(pj_status_t) pjsua_call_hangup(pjsua_call_id call_id,
 	    					 &user_event);
 	}
 
+	if (call->inv)
+	    call_inv_end_session(call, code, reason, msg_data);
+    } else {
+	/* Already requested and on progress */
+        PJ_LOG(4,(THIS_FILE, "Call %d hangup request ignored as "
+			     "it is on progress", call_id));
     }
-
-    if (call->inv)
-    	call_inv_end_session(call, code, reason, msg_data);
 
 on_return:
     if (dlg) pjsip_dlg_dec_lock(dlg);
@@ -4142,6 +4165,9 @@ static pj_status_t process_pending_reinvite(pjsua_call *call)
 		  ));
     }
 
+    /* Clear reinit media flag. Should we also cleanup other flags here? */
+    call->opt.flag &= ~PJSUA_CALL_REINIT_MEDIA;
+
     /* Generate SDP re-offer */
     status = pjsua_media_channel_create_sdp(call->index, pool, NULL,
 					    &new_offer, NULL);
@@ -4827,6 +4853,14 @@ static void pjsua_call_on_state_changed(pjsip_inv_session *inv,
 		       sizeof(call->last_text_buf_));
 	    break;
 	case PJSIP_INV_STATE_CONFIRMED:
+	    if (call->hanging_up) {
+	    	/* This can happen if there is a crossover between
+	    	 * our CANCEL request and the remote's 200 response.
+	    	 * So we send BYE here.
+	    	 */
+	    	call_inv_end_session(call, 200, NULL, NULL);
+	    	return;
+	    }
 	    pj_gettimeofday(&call->conn_time);
 
 	    if (call->trickle_ice.enabled) {
@@ -5063,7 +5097,7 @@ static void call_disconnect( pjsip_inv_session *inv,
     pj_status_t status;
 
     status = pjsip_inv_end_session(inv, code, NULL, &tdata);
-    if (status != PJ_SUCCESS)
+    if (status != PJ_SUCCESS || !tdata)
 	return;
 
 #if DISABLED_FOR_TICKET_1185
