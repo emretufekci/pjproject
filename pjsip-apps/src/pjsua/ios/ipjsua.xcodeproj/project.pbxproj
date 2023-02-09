@@ -312,7 +312,7 @@
 				ORGANIZATIONNAME = Teluu;
 				TargetAttributes = {
 					3AF0580316F050770046B835 = {
-						DevelopmentTeam = 93NHJQ455P;
+						DevelopmentTeam = TY2FWL588U;
 					};
 				};
 			};
@@ -501,6 +501,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = TY2FWL588U;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "ipjsua/ipjsua-Prefix.pch";
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -529,7 +530,7 @@
 					"$(PROJECT_DIR)",
 				);
 				ONLY_ACTIVE_ARCH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.teluu.${PRODUCT_NAME:rfc1034identifier}";
+				PRODUCT_BUNDLE_IDENTIFIER = com.teluu.ipjsua.sp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				VALID_ARCHS = arm64;
 				WRAPPER_EXTENSION = app;
@@ -540,6 +541,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = TY2FWL588U;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "ipjsua/ipjsua-Prefix.pch";
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -567,7 +569,7 @@
 					"$(PROJECT_DIR)",
 				);
 				ONLY_ACTIVE_ARCH = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.teluu.${PRODUCT_NAME:rfc1034identifier}";
+				PRODUCT_BUNDLE_IDENTIFIER = com.teluu.ipjsua.sp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				VALID_ARCHS = arm64;
 				WRAPPER_EXTENSION = app;

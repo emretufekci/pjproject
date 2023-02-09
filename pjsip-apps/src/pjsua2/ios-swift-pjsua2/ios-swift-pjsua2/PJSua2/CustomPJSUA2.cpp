@@ -25,16 +25,6 @@
 
 using namespace pj;
 
-// Split Function
-std::vector<std::string> split(std::string input, std::string regExp){
-    std::cout <<input <<std::endl;
-    std::regex ws_re(regExp);
-    std::vector<std::string> result{
-        std::sregex_token_iterator(input.begin(), input.end(), ws_re, -1), {}
-    };
-    return result;
-}
-
 // Listen swift code via function pointers
 void (*incomingCallPtr)() = 0;
 void (*callStatusListenerPtr)(int) = 0;
@@ -96,21 +86,10 @@ public:
         static std::string remoteHeader = "";
         
         if (prm.e.body.tsxState.tsx.statusText == "OK" && prm.e.body.tsxState.tsx.statusCode == 200){
-            if(remoteHeader.empty() == true){
                 remoteHeader = prm.e.body.tsxState.src.rdata.wholeMsg;
-            }
         }
                 
         if (ci.state == PJSIP_INV_STATE_INCOMING)   {
-            /**
-             Since, ci.remoteUri starts with <sip:xxxx@ip:port>
-             start with index 5 upto find position of character "@".
-             stoi -> string to integer.
-             */
-            
-            /**
-             There is no time to fix it... Always rush...
-             */
             //FIXME:: Following part seems not good. Fix it.
             std::cout<<"Ci remote uri";
             std::cout<<ci.remoteUri;
@@ -503,12 +482,15 @@ void PJSua2::outgoingCall(std::string dest_uri) {
     CallOpParam prm(true); // Use default call settings
     
     SipHeader sHeader;
+    SipHeader msgHeader;
     SipHeaderVector sHeaderVector;
     SipTxOption sTxOption;
-    
+    msgHeader.hName = "isMSG";
+    msgHeader.hValue = "SES";
     sHeader.hName = "DEV-ID";
     sHeader.hValue = "1155";
     sHeaderVector.push_back(sHeader);
+    sHeaderVector.push_back(msgHeader);
     sTxOption.headers = sHeaderVector;
     prm.txOption = sTxOption;
     
